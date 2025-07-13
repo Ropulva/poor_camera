@@ -7,10 +7,6 @@ import 'package:poor_camera/web_camera_service/web_keys.dart';
 import 'package:poor_camera/widgets/icon_button.dart';
 import 'camera_service.dart';
 
-// @JS('requestCameraPermission')
-// external JSPromise<JSBoolean> requestCameraPermission();
-
-
 class PoorCameraWebWidget extends StatefulWidget {
   const PoorCameraWebWidget({super.key, this.onImageTaken});
   final void Function(Uint8List? bytes)? onImageTaken;
@@ -45,6 +41,9 @@ class _PoorCameraWebWidgetState extends State<PoorCameraWebWidget> {
         _cameras = cameras;
         if (_cameras.isNotEmpty) {
           _selectedCamera = _cameras.first ;
+        }
+        else{
+          throw Exception('No cameras found');
         }
       });
 
@@ -112,8 +111,7 @@ class _PoorCameraWebWidgetState extends State<PoorCameraWebWidget> {
         children: [
           Positioned(
               top: 10,
-             // alignment: AlignmentDirectional.topCenter,
-              child: _buildView()
+              child: _buildView(),
           ),
           if(_cameraStarted == RequestState.loading)
             Center(
@@ -130,8 +128,9 @@ class _PoorCameraWebWidgetState extends State<PoorCameraWebWidget> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Error: $_errorMessage \n'
+                      'Error: ${_errorMessage??''} \n'
                           'Refresh to try again',
+                      textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 14,
@@ -234,7 +233,7 @@ class _PoorCameraWebWidgetState extends State<PoorCameraWebWidget> {
                   ],
                 ),
               ),
-            )
+            ),
           ],
         ],
       ),

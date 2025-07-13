@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:poor_camera/poor_camera.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
 }
 
@@ -16,6 +17,32 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
+
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      localizationsDelegates: const [
+        DefaultMaterialLocalizations.delegate,
+        DefaultWidgetsLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('en', 'US'), // English
+      ],
+      home: ExamplePage(),
+    );
+  }
+}
+
+class ExamplePage extends StatefulWidget {
+  const ExamplePage({super.key});
+
+  @override
+  State<ExamplePage> createState() => _ExamplePageState();
+}
+
+class _ExamplePageState extends State<ExamplePage> {
   String _platformVersion = 'Unknown';
   final _poorCameraPlugin = PoorCamera();
 
@@ -25,11 +52,8 @@ class _MyAppState extends State<MyApp> {
     initPlatformState();
   }
 
-  // Platform messages are asynchronous, so we initialize in an async method.
   Future<void> initPlatformState() async {
     String platformVersion;
-    // Platform messages may fail, so we use a try/catch PlatformException.
-    // We also handle the message potentially returning null.
     try {
       platformVersion =
           await _poorCameraPlugin.getPlatformVersion() ?? 'Unknown platform version';
@@ -46,18 +70,30 @@ class _MyAppState extends State<MyApp> {
       _platformVersion = platformVersion;
     });
   }
-
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('Plugin example app'),
-        ),
-        body: Center(
-          child: Text('Running on: $_platformVersion\n'),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Plugin example app'),
+      ),
+      body: Center(
+        child: Column(
+          children: [
+            Text('Running on: $_platformVersion\n'),
+            ElevatedButton(
+              onPressed: () async {
+                try {
+                   await _poorCameraPlugin.showCamera(context);
+                } catch (E) {
+                  print('Error $E');
+                }
+              },
+              child: Text('Open Camera'),
+            ),
+          ],
         ),
       ),
     );
   }
 }
+

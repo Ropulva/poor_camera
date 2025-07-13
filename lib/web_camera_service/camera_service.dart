@@ -24,6 +24,7 @@ external void stopCamera();
 external JSPromise<JSString?> _takePicture();
 
 class CameraService {
+
   static Future<List<CameraInfo>> fetchAvailableCameras() async {
     final jsArray = await getAvailableCameras().toDart;
     final cameras = jsArray.toDart.cast<CameraInfo>();
@@ -32,7 +33,8 @@ class CameraService {
 
   static Future<(bool, String?)> startCameraDevice(
       String videoElementId, {String? deviceId, String facingMode = 'environment'}
-      ) async {
+      ) async
+  {
     final result = await _startCamera(videoElementId, deviceId, facingMode).toDart;
     final tuple = result.toDart;
     return (tuple[0] as bool, tuple[1] as String?);
