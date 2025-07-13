@@ -1,15 +1,42 @@
 # poor_camera
 
-Plugin camera
+`poor_camera` is a simple Flutter plugin that implements camera functionality for **Web**.  
+It injects a small JavaScript helper into your `web/index.html` and exposes an easy Dart API for capturing images in Flutter web apps.
+ 
 
-## Getting Started
+## Usage
+```dart
+import 'package:poor_camera/poor_camera.dart';
 
-This project is a starting point for a Flutter
-[plug-in package](https://flutter.dev/to/develop-plugins),
-a specialized package that includes platform-specific implementation code for
-Android and/or iOS.
+Future<Uint8List?> openCamera(BuildContext context) async {
+  try {
+    final poorCamera = PoorCamera(); 
+    final bytes = await poorCamera.showCamera(
+      context,
+    );
+    return bytes;
+  } catch (e) {
+    print('Error: $e');
+    return null;
+  }
+}
+ 
+}
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Web Setup
 
+To enable camera functionality on the web, add the following to your `web/index.html` inside the `<head>` tag:
+
+```html
+<head>
+  <!-- ... other head tags ... -->
+  <script
+    type="application/javascript"
+    src="/assets/packages/poor_camera/assets/web/camera_settings.js"
+    defer>
+  </script>
+  <!-- ... other head tags ... -->
+</head>
+
+```
