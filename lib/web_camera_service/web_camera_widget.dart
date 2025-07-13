@@ -160,8 +160,10 @@ class _PoorCameraWebWidgetState extends State<PoorCameraWebWidget> {
               child: Container(
                 width: sw,
                 color: Colors.black,
+                alignment:  AlignmentDirectional.center,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   spacing: 100,
                   children: [
                     PoorIconButton(
