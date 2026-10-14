@@ -7,6 +7,9 @@ import 'package:poor_camera/web_camera_service/web_keys.dart';
 import 'package:poor_camera/widgets/icon_button.dart';
 import 'camera_service.dart';
 
+const _environment = 'environment';
+const _user = 'user';
+
 class PoorCameraWebWidget extends StatefulWidget {
   const PoorCameraWebWidget({super.key, this.onImageTaken});
   final void Function(Uint8List? bytes)? onImageTaken;
@@ -19,86 +22,129 @@ class PoorCameraWebWidget extends StatefulWidget {
 class _PoorCameraWebWidgetState extends State<PoorCameraWebWidget> {
   List<CameraInfo> _cameras = [];
   RequestState _cameraStarted = RequestState.loading;
-  String? _imageBase64;
   String? _errorMessage;
-  CameraInfo? _selectedCamera;
-  bool _imageTaken = false;
+  /// The camera last requested; kept on failure so retry and switch know
+  /// which camera the user was trying to open.
+  String? _deviceId;
+  String _facingMode = _environment;
+  /// Lets a newer start request discard the result of an older one.
+  int _requestId = 0;
+  Uint8List? imageBytes;
 
   @override
   void initState() {
     super.initState();
-    _initCameraList();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _startCamera(facingMode: _environment);
+    });
   }
 
-  Future<void> _initCameraList() async {
-    try{
-      setState(() {
-        _cameraStarted = RequestState.loading;
-      });
-      final cameras = await CameraService.fetchAvailableCameras();
-      setState(() {
-        _cameraStarted = RequestState.loading;
-        _cameras = cameras;
-        if (_cameras.isNotEmpty) {
-          _selectedCamera = _cameras.first ;
-        }
-        else{
-          throw Exception('No cameras found');
-        }
-      });
-
-      if (_selectedCamera != null) {
-        await _startCameraWithSelected();
-      }
-
-    }catch(e){
-      _errorMessage = e.toString();
-      _cameraStarted = RequestState.error;
-      setState(() {});
-    }
-
-  }
-
-
-  Future<void> _startCameraWithSelected() async {
-   if(  _cameraStarted != RequestState.loading){
-     setState(() {  _cameraStarted = RequestState.loading;});
-   }
-    if (_selectedCamera == null) return;
-    final (success, error) = await CameraService.startCameraDevice(
-      WebKeys.videoElementId,
-      deviceId: _selectedCamera!.deviceId.toDart,
-      facingMode: _selectedCamera!.facingMode.toDart,
-    );
+  Future<void> _startCamera({String? deviceId, required String facingMode}) async {
+    final requestId = ++_requestId;
     setState(() {
-      _cameraStarted = success? RequestState.success : RequestState.error;
-      _errorMessage = error;
+      _cameraStarted = RequestState.loading;
+      _errorMessage = null;
+      _deviceId = deviceId;
+      _facingMode = facingMode;
     });
-   print('switching to  ${_selectedCamera?.label.toDart}');
+
+    final (success, error, activeDeviceId) = await CameraService.startCameraDevice(
+      WebKeys.videoElementId,
+      deviceId: deviceId,
+      facingMode: facingMode,
+    );
+    if (!mounted || requestId != _requestId) return;
+
+    // Device ids and labels are only exposed once the browser has granted access,
+    // and some browsers hide labels while no stream is live, so re-enumerate
+    // until at least one camera reports its facing.
+    final hasKnownFacing = _cameras.any((c) => _isKnownFacing(c.facingMode.toDart));
+    final cameras = hasKnownFacing ? _cameras : await CameraService.fetchAvailableCameras();
+    if (!mounted || requestId != _requestId) return;
+
+    setState(() {
+      _cameras = cameras;
+      if (success) {
+        _deviceId = activeDeviceId ?? deviceId;
+        _facingMode = _facingOf(_deviceId) ?? facingMode;
+        _cameraStarted = RequestState.success;
+      } else {
+        _errorMessage = _describeError(error);
+        _cameraStarted = RequestState.error;
+      }
+    });
   }
 
-  void _clearCamera() {
-    if(mounted) {
-      setState(() {
-      _imageBase64 = null;
-    });
+  void _retry() => _startCamera(deviceId: _deviceId, facingMode: _facingMode);
+
+  /// Jumps to the first camera facing the other way, so phones with several
+  /// back lenses don't make the user cycle through all of them.
+  void _switchCamera() {
+    final currentFacing = _facingOf(_deviceId) ?? _facingMode;
+    final targetFacing = currentFacing == _user ? _environment : _user;
+
+    final candidates = _cameras.where((c) => c.facingMode.toDart == targetFacing);
+    if (candidates.isNotEmpty) {
+      _startCamera(deviceId: candidates.first.deviceId.toDart, facingMode: targetFacing);
+      return;
     }
+
+    final hasUnlabelledCameras = _cameras.length > 1 &&
+        _cameras.every((c) => !_isKnownFacing(c.facingMode.toDart));
+    if (hasUnlabelledCameras) {
+      final index = _cameras.indexWhere((c) => c.deviceId.toDart == _deviceId);
+      final next = _cameras[(index + 1) % _cameras.length];
+      _startCamera(deviceId: next.deviceId.toDart, facingMode: targetFacing);
+      return;
+    }
+
+    _startCamera(facingMode: targetFacing);
+  }
+
+  String? _facingOf(String? deviceId) {
+    if (deviceId == null) return null;
+    for (final camera in _cameras) {
+      if (camera.deviceId.toDart == deviceId) {
+        final facing = camera.facingMode.toDart;
+        return _isKnownFacing(facing) ? facing : null;
+      }
+    }
+    return null;
+  }
+
+  bool _isKnownFacing(String facing) => facing == _user || facing == _environment;
+
+  String _describeError(String? error) {
+    final message = error ?? '';
+    if (message.contains('NotAllowedError') || message.contains('SecurityError')) {
+      return 'Camera permission denied. Allow camera access in your browser site settings';
+    }
+    if (message.contains('NotReadableError') || message.contains('AbortError')) {
+      return 'Camera is in use by another app or could not be started';
+    }
+    if (message.contains('NotFoundError') || message.contains('OverconstrainedError')) {
+      return 'Camera not available';
+    }
+    return message.isEmpty ? 'Camera could not be started' : message;
   }
 
   Future<void> _takePicture() async {
     final image = await CameraService.takePicture();
-    setState(() {
-      _imageBase64 = image;
-      if (_imageBase64 != null) {
-        final base64String = _imageBase64!.split(',').last;
-        imageBytes = base64Decode(base64String);
-        _imageTaken = true;
-      }
-    });
+    if (!mounted) return;
+    try {
+      if (image == null) throw const FormatException();
+      final bytes = base64Decode(image.split(',').last);
+      setState(() => imageBytes = bytes);
+    } on FormatException {
+      setState(() {
+        _errorMessage = 'Could not take the picture';
+        _cameraStarted = RequestState.error;
+      });
+    }
   }
+
   double get sh => MediaQuery.of(context).size.height ;
   double get sw => MediaQuery.of(context).size.width ;
-  Uint8List? imageBytes;
 
   @override
   Widget build(BuildContext context) {
@@ -138,13 +184,13 @@ class _PoorCameraWebWidgetState extends State<PoorCameraWebWidget> {
                     ),
                     PoorIconButton(
                         icon: Icon(Icons.refresh),
-                        onPressed: _initCameraList
+                        onPressed: _retry
                     ),
                   ],
                 ),
               ),
             ),
-          if (_imageTaken && imageBytes != null)...[
+          if (imageBytes != null)...[
             Align(
               alignment: AlignmentDirectional.topCenter,
               child: Image.memory(
@@ -176,7 +222,6 @@ class _PoorCameraWebWidgetState extends State<PoorCameraWebWidget> {
                         icon: Icon(Icons.close),
                         onPressed: ()async{
                           setState(() {
-                            _imageTaken = false;
                             imageBytes = null;
                           });
                         }
@@ -186,7 +231,7 @@ class _PoorCameraWebWidgetState extends State<PoorCameraWebWidget> {
               ),
             ),
           ]
-          else if(_cameraStarted == RequestState.success) ...[
+          else
             Positioned(
               bottom: 50,
               child: Container(
@@ -198,43 +243,21 @@ class _PoorCameraWebWidgetState extends State<PoorCameraWebWidget> {
                   children: [
                     PoorIconButton(
                         icon: Icon(Icons.cameraswitch),
-                        onPressed: (){
-                          //print('_cameras.length ${_cameras.length} -- '
-                           //   '${_cameras.map((c) => c.label.toDart).toList()}');
-                          if(_cameras.length > 1 ){
-
-                            final index = _cameras.indexOf(_selectedCamera!);
-                            CameraService.stop();
-                            final next = index == 0 ? 1 : 0 ;
-                            setState(() {
-                             // print('switching to $next - ${_cameras[next].label.toDart}');
-                              _selectedCamera = _cameras[next];
-                            });
-                            _startCameraWithSelected();
-                          }
-                        }
+                        onPressed: _switchCamera
                     ) ,
                     PoorIconButton(
                         icon: Icon(Icons.circle_outlined),
                         width: 50,
-                        onPressed: _takePicture
+                        onPressed: _cameraStarted == RequestState.success ? _takePicture : null
                     ),
                     PoorIconButton(
                         icon: Icon(Icons.close),
-                        onPressed: (){
-                          if(_imageTaken){
-                            _clearCamera();
-                          }
-                          else{
-                            Navigator.pop(context);
-                          }
-                        }
+                        onPressed: () => Navigator.pop(context)
                     ),
                   ],
                 ),
               ),
             ),
-          ],
         ],
       ),
     );
